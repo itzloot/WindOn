@@ -1,0 +1,565 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>WindOn | Ultra Dev Environment</title>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/codemirror.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/theme/dracula.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/codemirror.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/mode/xml/xml.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/mode/css/css.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/mode/javascript/javascript.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/mode/htmlmixed/htmlmixed.min.js"></script>
+
+    <style>
+        /* --- 3. CSS ARCHITECTURE --- */
+        :root {
+            --bg-main: #0f172a;      /* Slate 900 */
+            --bg-panel: #1e293b;     /* Slate 800 */
+            --accent: #38bdf8;       /* Sky 400 */
+            --glass: rgba(15, 23, 42, 0.85);
+        }
+
+        /* Reset & Base */
+        * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+        body {
+            background-color: var(--bg-main);
+            color: #cbd5e1;
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+            height: 100vh;
+            height: 100dvh; /* Mobile viewport fix */
+            margin: 0;
+            overflow: hidden; /* Prevent body scroll, handle internally */
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* --- LAYOUT REGIONS --- */
+        header { flex: 0 0 60px; z-index: 50; }
+        nav { flex: 0 0 65px; z-index: 50; }
+        main { flex: 1; position: relative; overflow: hidden; display: flex; }
+
+        /* --- VIEW MANAGEMENT --- */
+        .view-layer { 
+            display: none; 
+            width: 100%; 
+            height: 100%; 
+            flex-direction: column; 
+            opacity: 0; 
+        }
+        .view-layer.active { 
+            display: flex; 
+            animation: fadeIn 0.3s ease-out forwards; 
+        }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+
+        /* --- SCROLLING ENGINE --- */
+        .scroll-y { 
+            overflow-y: auto; 
+            flex: 1; 
+            padding: 20px; 
+            padding-bottom: 80px; 
+            -webkit-overflow-scrolling: touch; 
+        }
+        
+        /* Custom Scrollbars */
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: #0f172a; }
+        ::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
+
+        /* --- UI COMPONENTS --- */
+        .glass-bar {
+            background: var(--glass);
+            backdrop-filter: blur(12px);
+            border-bottom: 1px solid rgba(255,255,255,0.05);
+        }
+        .nav-glass {
+            background: var(--glass);
+            backdrop-filter: blur(12px);
+            border-top: 1px solid rgba(255,255,255,0.05);
+        }
+
+        .course-card {
+            background: var(--bg-panel);
+            border: 1px solid #334155;
+            border-radius: 16px;
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.2);
+        }
+        .course-card:active { transform: scale(0.98); background: #2d3748; }
+
+        /* --- EDITOR STYLING --- */
+        #editor-wrapper { flex: 1; display: flex; flex-direction: column; height: 100%; }
+        
+        /* CodeMirror Overrides for Seamless Look */
+        .CodeMirror { 
+            height: 100% !important; 
+            font-family: 'Fira Code', 'Consolas', monospace; 
+            font-size: 13px; 
+            background-color: var(--bg-main) !important; 
+            line-height: 1.6;
+        }
+        .CodeMirror-gutters { 
+            background-color: var(--bg-main) !important; 
+            border-right: 1px solid #334155; 
+        }
+        .CodeMirror-linenumber { color: #475569 !important; }
+
+        /* Snippet Chips */
+        .chip {
+            font-size: 10px; padding: 6px 12px; background: #334155; 
+            border-radius: 6px; cursor: pointer; white-space: nowrap; 
+            border: 1px solid transparent; transition: 0.2s;
+            font-weight: 600; color: #94a3b8;
+        }
+        .chip:hover { background: var(--accent); color: #0f172a; border-color: #7dd3fc; }
+
+        /* --- PREVIEW MODAL (Mobile vs Desktop) --- */
+        #preview-modal { 
+            position: absolute; top:0; left:0; width:100%; height:100%; 
+            background:white; z-index:40; display:none; 
+        }
+        #preview-modal.open { 
+            display: block; 
+            animation: slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1); 
+        }
+        @keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
+
+        /* Desktop Layout Override */
+        @media(min-width: 768px) {
+            #editor-wrapper { flex-direction: row; }
+            #code-column, #preview-column { width: 50%; height: 100%; }
+            #preview-modal { display: block !important; position: relative; width: 100%; height: 100%; animation: none; border-left: 2px solid #334155; }
+            #mobile-preview-close { display: none; }
+            #mobile-run-btn { display: none; }
+        }
+    </style>
+</head>
+<body>
+
+    <header class="glass-bar flex justify-between items-center px-4 shadow-sm relative z-50">
+        <div class="flex items-center gap-3">
+            <div class="bg-gradient-to-br from-sky-500 to-blue-600 w-9 h-9 rounded-xl flex items-center justify-center font-bold text-white shadow-lg shadow-sky-500/20">
+                <i class="fas fa-wind text-sm"></i>
+            </div>
+            <div>
+                <h1 class="text-white font-bold text-base tracking-wide leading-tight">WindOn</h1>
+                <p class="text-[10px] text-sky-400 font-mono uppercase tracking-wider font-bold">Ultra Edition</p>
+            </div>
+        </div>
+        <div class="flex items-center gap-3">
+            <button onclick="editor.download()" class="text-slate-400 hover:text-white transition text-xs border border-slate-700 hover:border-sky-500 px-3 py-1.5 rounded-lg flex items-center gap-2">
+                <i class="fas fa-download"></i> <span class="hidden sm:inline">Save</span>
+            </button>
+            <div class="text-xs bg-slate-800/80 px-3 py-1.5 rounded-full border border-slate-700 flex items-center gap-2 font-semibold shadow-inner">
+                <i class="fas fa-trophy text-yellow-400"></i> <span id="user-lvl" class="text-slate-200">Lvl 1</span>
+            </div>
+        </div>
+    </header>
+
+    <main>
+        
+        <div id="view-learn" class="view-layer active">
+            <div id="learn-home" class="scroll-y">
+                <div class="flex justify-between items-end mb-6">
+                    <h2 class="text-xl font-bold text-white flex items-center gap-2">
+                        <i class="fas fa-graduation-cap text-sky-500"></i> Curriculum
+                    </h2>
+                    <span class="text-xs text-slate-500">v2.4 Updated</span>
+                </div>
+                <div class="grid gap-4" id="course-list">
+                    </div>
+            </div>
+            
+            <div id="learn-lesson" class="scroll-y hidden bg-slate-900 absolute top-0 left-0 w-full h-full z-20">
+                <div class="sticky top-0 bg-slate-900/95 backdrop-blur pb-4 pt-2 z-10 border-b border-slate-800 mb-4 px-2">
+                     <button onclick="lms.closeLesson()" class="text-sm text-slate-400 hover:text-white flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-slate-800 transition">
+                        <i class="fas fa-arrow-left"></i> Back to Courses
+                    </button>
+                </div>
+                <div id="lesson-content" class="mt-2 px-2 pb-10"></div>
+            </div>
+        </div>
+
+        <div id="view-test" class="view-layer">
+            <div id="test-home" class="scroll-y">
+                <h2 class="text-xl font-bold text-white mb-6 flex items-center gap-2">
+                    <i class="fas fa-certificate text-green-500"></i> Certifications
+                </h2>
+                <div class="grid md:grid-cols-2 gap-4" id="exam-list">
+                    </div>
+            </div>
+            
+            <div id="test-active" class="hidden absolute top-0 left-0 w-full h-full bg-slate-900 p-6 flex flex-col z-20">
+                <div class="flex justify-between items-center mb-6 border-b border-slate-800 pb-4">
+                    <div class="text-slate-400 text-sm font-mono" id="quiz-progress">Q 1/10</div>
+                    <button onclick="exams.quit()" class="text-red-400 hover:text-red-300 text-xs bg-red-500/10 border border-red-500/20 px-3 py-1 rounded-full">
+                        <i class="fas fa-times"></i> Quit
+                    </button>
+                </div>
+                <div id="question-box" class="flex-1 flex flex-col justify-center max-w-2xl mx-auto w-full"></div>
+            </div>
+        </div>
+
+        <div id="view-code" class="view-layer">
+            <div id="editor-wrapper">
+                
+                <div id="code-column" class="h-full relative flex flex-col w-full bg-slate-900">
+                    
+                    <div class="glass-bar px-3 py-2 text-xs text-gray-400 flex flex-col gap-2 border-b border-slate-800/50 shrink-0">
+                        <div class="flex justify-between items-center w-full">
+                            <span class="font-mono text-sky-400 font-bold"><i class="fas fa-code"></i> index.html</span>
+                            <div class="flex gap-3">
+                                <button onclick="editor.reset()" title="Clear Code" class="hover:text-red-400 transition"><i class="fas fa-trash-alt"></i></button>
+                                <button id="mobile-run-btn" onclick="editor.run()" class="text-green-400 font-bold flex items-center gap-1 bg-green-900/20 px-2 py-0.5 rounded border border-green-900/50"><i class="fas fa-play"></i> RUN</button>
+                            </div>
+                        </div>
+                        
+                        <div class="flex gap-2 overflow-x-auto pb-1 no-scrollbar w-full mask-linear">
+                            <span class="text-[9px] uppercase font-bold self-center mr-1 text-slate-500">Quick:</span>
+                            <div onclick="editor.insert('struct')" class="chip">HTML5</div>
+                            <div onclick="editor.insert('form')" class="chip">Form</div>
+                            <div onclick="editor.insert('table')" class="chip">Table</div>
+                            <div onclick="editor.insert('flex')" class="chip">Flex</div>
+                            <div onclick="editor.insert('card')" class="chip">Card</div>
+                            <div onclick="editor.insert('nav')" class="chip">Navbar</div>
+                            <div onclick="editor.insert('anim')" class="chip">Anim</div>
+                        </div>
+                    </div>
+
+                    <div class="flex-1 overflow-hidden relative">
+                        <textarea id="code-area"></textarea>
+                    </div>
+                </div>
+
+                <div id="preview-column">
+                    <div id="preview-modal" class="bg-white">
+                        <div id="mobile-preview-close" class="absolute top-4 right-4 z-50">
+                            <button onclick="editor.closePreview()" class="bg-slate-900 text-white w-10 h-10 rounded-full shadow-2xl opacity-90 flex items-center justify-center border border-slate-700">
+                                <i class="fas fa-times"></i>
+                            </button>
+                        </div>
+                        <iframe id="preview-frame" class="w-full h-full border-none bg-white"></iframe>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    </main>
+
+    <nav class="nav-glass flex justify-around items-center relative z-50">
+        <button onclick="nav.to('learn')" id="btn-learn" class="nav-btn text-sky-500 flex flex-col items-center gap-1.5 w-full h-full justify-center hover:bg-slate-800/30 transition group">
+            <div class="relative">
+                <i class="fas fa-graduation-cap text-xl group-hover:-translate-y-1 transition duration-300"></i>
+            </div>
+            <span class="text-[10px] font-bold tracking-wider">LEARN</span>
+        </button>
+        <button onclick="nav.to('test')" id="btn-test" class="nav-btn text-slate-500 flex flex-col items-center gap-1.5 w-full h-full justify-center hover:bg-slate-800/30 transition group">
+            <div class="relative">
+                <i class="fas fa-clipboard-check text-xl group-hover:-translate-y-1 transition duration-300"></i>
+            </div>
+            <span class="text-[10px] font-bold tracking-wider">EXAMS</span>
+        </button>
+        <button onclick="nav.to('code')" id="btn-code" class="nav-btn text-slate-500 flex flex-col items-center gap-1.5 w-full h-full justify-center hover:bg-slate-800/30 transition group">
+            <div class="relative">
+                <i class="fas fa-terminal text-xl group-hover:-translate-y-1 transition duration-300"></i>
+            </div>
+            <span class="text-[10px] font-bold tracking-wider">EDITOR</span>
+        </button>
+    </nav>
+
+    <script>
+        // --- A. THE DATABASE (DB) ---
+        const DB = {
+            courses: [
+                {
+                    id: 'html', title: 'HTML5 Mastery', color: 'orange', icon: 'fa-html5', description: 'Build the structural foundation of the web.',
+                    lessons: [
+                        { t: "1. The Structure", d: "Every HTML page starts with a DOCTYPE and root elements.", c: "<!DOCTYPE html>\n<html lang='en'>\n<head>\n  <meta charset='UTF-8'>\n  <title>My Page</title>\n</head>\n<body>\n  <h1>Welcome!</h1>\n  <p>This is my first website.</p>\n</body>\n</html>" },
+                        { t: "2. Text & Headings", d: "Use h1-h6 for titles and p for paragraphs.", c: "<h1>Main Title</h1>\n<h2>Subtitle Section</h2>\n<p>This is a standard paragraph.</p>\n<p>This is <b>bold</b> and <i>italic</i>.</p>" },
+                        { t: "3. Hyperlinks & Images", d: "Connecting the web with anchors and images.", c: "\n<a href='https://google.com' target='_blank'>Go to Google</a>\n\n\n<img src='https://via.placeholder.com/150' alt='Demo Image' />" },
+                        { t: "4. Input Forms", d: "Gathering user input using form elements.", c: "<form>\n  <label>Email:</label>\n  <input type='email' placeholder='you@web.com' />\n  <br><br>\n  <button type='submit'>Sign Up</button>\n</form>" }
+                    ]
+                },
+                {
+                    id: 'css', title: 'CSS3 Design', color: 'blue', icon: 'fa-css3-alt', description: 'Style, layout, and animate your pages.',
+                    lessons: [
+                        { t: "1. Selectors & Colors", d: "Target elements and apply basic styles.", c: "<style>\n  body { background-color: #111; color: white; font-family: sans-serif; }\n  h1 { color: #38bdf8; text-align: center; }\n  p { color: #94a3b8; }\n</style>\n\n<h1>Hello CSS</h1>\n<p>Design is intelligence made visible.</p>" },
+                        { t: "2. Box Model", d: "Padding, Borders, and Margins explained.", c: "<style>\n  .box {\n    background: #1e293b;\n    border: 2px solid #38bdf8;\n    padding: 20px;\n    margin: 20px;\n    border-radius: 10px;\n    color: white;\n  }\n</style>\n\n<div class='box'>\n  I am a box with padding and borders!\n</div>" },
+                        { t: "3. Flexbox Layout", d: "The modern way to align items.", c: "<style>\n  .container {\n    display: flex;\n    gap: 10px;\n    justify-content: center;\n    align-items: center;\n    height: 100vh;\n    background: #222;\n  }\n  .item {\n    width: 80px; height: 80px;\n    background: #38bdf8;\n    display: grid;\n    place-items: center;\n    font-weight: bold;\n  }\n</style>\n\n<div class='container'>\n  <div class='item'>1</div>\n  <div class='item'>2</div>\n  <div class='item'>3</div>\n</div>" }
+                    ]
+                },
+                {
+                    id: 'js', title: 'JavaScript Logic', color: 'yellow', icon: 'fa-js', description: 'Make your website interactive and smart.',
+                    lessons: [
+                        { t: "1. Variables & Output", d: "Storing data and printing to console/screen.", c: "<h1>JS Output</h1>\n<p id='demo'></p>\n\n<script>\n  let name = 'WindOn User';\n  let score = 100;\n  document.getElementById('demo').innerText = name + ' has ' + score + ' points.';\n<\/script>" },
+                        { t: "2. Functions & Events", d: "Trigger code when a user clicks.", c: "<button onclick='sayHello()' style='padding:10px 20px;'>Click Me</button>\n\n<script>\n  function sayHello() {\n    alert('Hello from JavaScript!');\n  }\n<\/script>" },
+                        { t: "3. DOM Manipulation", d: "Change styles dynamically.", c: "<div id='box' style='width:100px; height:100px; background:red;'></div>\n<button onclick='changeColor()'>Change Color</button>\n\n<script>\n  function changeColor() {\n    document.getElementById('box').style.background = 'blue';\n  }\n<\/script>" }
+                    ]
+                }
+            ],
+            
+            exams: [
+                {
+                    id: 'html_ex', title: 'HTML Associate', q: [
+                        { q: "What does HTML stand for?", o: ["Hyper Text Markup Language", "Home Tool Markup Language"], a: 0 },
+                        { q: "Which tag is used for the largest heading?", o: ["<head>", "<h6>", "<h1>"], a: 2 },
+                        { q: "Which character indicates an end tag?", o: ["*", "/", "<"], a: 1 },
+                        { q: "What is the correct HTML for a line break?", o: ["<br>", "<lb>", "<break>"], a: 0 },
+                        { q: "How do you create an ordered list?", o: ["<ul>", "<ol>", "<list>"], a: 1 }
+                    ]
+                },
+                {
+                    id: 'css_ex', title: 'CSS Designer', q: [
+                        { q: "What does CSS stand for?", o: ["Creative Style Sheets", "Cascading Style Sheets"], a: 1 },
+                        { q: "Which property controls text size?", o: ["font-style", "text-size", "font-size"], a: 2 },
+                        { q: "How do you select an element with id 'demo'?", o: ["#demo", ".demo", "demo"], a: 0 },
+                        { q: "Which property changes the background color?", o: ["color", "bgcolor", "background-color"], a: 2 }
+                    ]
+                }
+            ],
+
+            snippets: {
+                struct: '<!DOCTYPE html>\n<html lang="en">\n<head>\n <meta charset="UTF-8">\n <meta name="viewport" content="width=device-width, initial-scale=1.0">\n <title>App</title>\n</head>\n<body>\n  <h1>Hello</h1>\n</body>\n</html>',
+                form: '<form style="padding:20px; background:#f1f5f9; border-radius:8px; max-width:300px;">\n  <h3>Login</h3>\n  <input type="text" placeholder="Username" style="width:100%; padding:8px; margin-bottom:10px;">\n  <input type="password" placeholder="Password" style="width:100%; padding:8px; margin-bottom:10px;">\n  <button style="width:100%; padding:8px; background:#0ea5e9; color:white; border:none;">Log In</button>\n</form>',
+                table: '<table border="1" cellpadding="10" style="border-collapse:collapse; width:100%;">\n  <tr style="background:#1e293b; color:white;"><th>ID</th><th>Name</th><th>Role</th></tr>\n  <tr><td>01</td><td>Alice</td><td>Dev</td></tr>\n  <tr><td>02</td><td>Bob</td><td>Design</td></tr>\n</table>',
+                flex: '<div style="display:flex; justify-content:space-between; align-items:center; padding:20px; background:#e2e8f0;">\n  <div style="background:#ef4444; width:50px; height:50px; border-radius:50%;"></div>\n  <div style="background:#3b82f6; width:50px; height:50px; border-radius:50%;"></div>\n  <div style="background:#22c55e; width:50px; height:50px; border-radius:50%;"></div>\n</div>',
+                card: '<div style="background:white; padding:20px; border-radius:12px; box-shadow:0 4px 6px rgba(0,0,0,0.1); max-width:300px; font-family:sans-serif;">\n  <img src="https://via.placeholder.com/300x150" style="width:100%; border-radius:8px;">\n  <h3 style="margin-top:10px;">Card Title</h3>\n  <p style="color:#64748b;">This is a beautiful card component.</p>\n  <button style="background:#3b82f6; color:white; border:none; padding:8px 16px; border-radius:4px;">Read More</button>\n</div>',
+                nav: '<nav style="background:#0f172a; padding:15px; display:flex; gap:20px; color:white;">\n  <a href="#" style="color:white; text-decoration:none; font-weight:bold;">Home</a>\n  <a href="#" style="color:#94a3b8; text-decoration:none;">About</a>\n  <a href="#" style="color:#94a3b8; text-decoration:none;">Contact</a>\n</nav>',
+                anim: '<div style="width:50px; height:50px; background:#f43f5e; animation: spin 2s linear infinite;"></div>\n<style>\n  @keyframes spin { 100% { transform: rotate(360deg); } }\n</style>'
+            }
+        };
+
+        // --- B. LEARNING MANAGEMENT SYSTEM (LMS) ---
+        const lms = {
+            init: function() {
+                const list = document.getElementById('course-list');
+                list.innerHTML = DB.courses.map((c, i) => `
+                    <div onclick="lms.openCourse(${i})" class="course-card p-6 flex items-center gap-5 cursor-pointer hover:border-${c.color}-500/50 group border border-transparent">
+                        <div class="w-14 h-14 rounded-2xl bg-${c.color}-500/10 text-${c.color}-500 flex items-center justify-center text-2xl group-hover:scale-110 transition shadow-[0_0_15px_rgba(0,0,0,0.2)]">
+                            <i class="fab ${c.icon}"></i>
+                        </div>
+                        <div class="flex-1">
+                            <h3 class="font-bold text-white text-lg mb-1">${c.title}</h3>
+                            <p class="text-sm text-slate-400 leading-snug">${c.description}</p>
+                            <p class="text-xs text-slate-500 mt-2 font-mono"><i class="fas fa-list-ul"></i> ${c.lessons.length} Lessons</p>
+                        </div>
+                        <i class="fas fa-chevron-right text-slate-700 group-hover:text-${c.color}-400 transition"></i>
+                    </div>
+                `).join('');
+            },
+
+            openCourse: function(index) {
+                const course = DB.courses[index];
+                document.getElementById('learn-home').classList.add('hidden');
+                document.getElementById('learn-lesson').classList.remove('hidden');
+                
+                const content = document.getElementById('lesson-content');
+                content.innerHTML = `
+                    <div class="flex items-center gap-3 mb-6 mt-2">
+                        <i class="fab ${course.icon} text-3xl text-${course.color}-500"></i>
+                        <h2 class="text-3xl font-bold text-white">${course.title}</h2>
+                    </div>
+                    <div class="space-y-8">
+                        ${course.lessons.map((l, idx) => `
+                            <div class="bg-slate-800/50 p-5 rounded-2xl border border-slate-700/80 relative overflow-hidden">
+                                <div class="absolute top-0 left-0 w-1 h-full bg-${course.color}-500"></div>
+                                <h4 class="font-bold text-xl text-white mb-3 pl-2">${l.t}</h4>
+                                <p class="text-slate-300 text-sm mb-4 leading-relaxed pl-2">${l.d}</p>
+                                <div class="bg-[#0f172a] p-4 rounded-xl font-mono text-[11px] text-sky-300 border border-slate-800 mb-4 overflow-x-auto shadow-inner leading-5">
+                                    ${l.c.replace(/</g, '&lt;')}
+                                </div>
+                                <button onclick="editor.loadLesson(${index}, ${idx})" class="w-full bg-slate-700 hover:bg-${course.color}-600 text-white text-sm font-bold py-3 rounded-xl flex justify-center items-center gap-2 transition-all shadow-lg group">
+                                    <i class="fas fa-terminal group-hover:scale-110 transition"></i> TRY THIS CODE
+                                </button>
+                            </div>
+                        `).join('')}
+                    </div>
+                `;
+                document.getElementById('view-learn').scrollTop = 0;
+            },
+
+            closeLesson: function() {
+                document.getElementById('learn-lesson').classList.add('hidden');
+                document.getElementById('learn-home').classList.remove('hidden');
+            }
+        };
+
+        // --- C. EXAM ENGINE ---
+        const exams = {
+            activeQuiz: null, qIndex: 0, score: 0,
+
+            init: function() {
+                const list = document.getElementById('exam-list');
+                list.innerHTML = DB.exams.map((e, i) => `
+                    <div class="course-card p-6 relative overflow-hidden group hover:border-green-500/30">
+                         <div class="absolute top-0 right-0 -mt-4 -mr-4 text-green-500/5 text-8xl z-0 pointer-events-none">
+                            <i class="fas fa-certificate"></i>
+                        </div>
+                        <div class="relative z-10">
+                            <h3 class="font-bold text-white text-xl mb-2">${e.title}</h3>
+                            <p class="text-sm text-slate-400 mb-6 font-mono"><i class="fas fa-question-circle"></i> ${e.q.length} Questions</p>
+                            <button onclick="exams.start(${i})" class="bg-green-600 hover:bg-green-500 text-white px-6 py-2 rounded-lg text-sm font-bold transition shadow-lg shadow-green-900/20 w-full md:w-auto transform active:scale-95">START EXAM</button>
+                        </div>
+                    </div>
+                `).join('');
+            },
+
+            start: function(index) {
+                this.activeQuiz = DB.exams[index];
+                this.qIndex = 0; this.score = 0;
+                document.getElementById('test-home').classList.add('hidden');
+                document.getElementById('test-active').classList.remove('hidden');
+                this.renderQ();
+            },
+
+            renderQ: function() {
+                const q = this.activeQuiz.q[this.qIndex];
+                document.getElementById('quiz-progress').innerText = `Question ${this.qIndex + 1} / ${this.activeQuiz.q.length}`;
+                document.getElementById('question-box').innerHTML = `
+                    <h2 class="text-2xl font-bold text-white mb-8 leading-tight">${q.q}</h2>
+                    <div class="space-y-4">
+                        ${q.o.map((opt, i) => `
+                            <button onclick="exams.answer(${i})" class="w-full text-left p-5 rounded-xl bg-slate-800/80 hover:bg-slate-700 border border-slate-700 hover:border-sky-500 transition-all text-base group font-medium flex items-center">
+                                <span class="inline-block w-8 h-8 rounded-full bg-slate-900 border border-slate-700 text-slate-400 text-center leading-7 mr-3 group-hover:border-sky-400 group-hover:text-sky-400 text-sm font-bold">${String.fromCharCode(65+i)}</span> ${opt}
+                            </button>
+                        `).join('')}
+                    </div>
+                `;
+            },
+
+            answer: function(choice) {
+                if(choice === this.activeQuiz.q[this.qIndex].a) this.score++;
+                this.qIndex++;
+                if(this.qIndex >= this.activeQuiz.q.length) this.finish(); else this.renderQ();
+            },
+
+            finish: function() {
+                const percent = Math.round((this.score / this.activeQuiz.q.length) * 100);
+                const passed = percent >= 70;
+                document.getElementById('question-box').innerHTML = `
+                    <div class="text-center">
+                        <div class="inline-flex p-6 rounded-full bg-${passed ? 'green' : 'red'}-500/10 mb-6 border border-${passed ? 'green' : 'red'}-500/20">
+                            <i class="fas ${passed ? 'fa-trophy text-green-400' : 'fa-times-circle text-red-400'} text-6xl"></i>
+                        </div>
+                        <h2 class="text-3xl font-bold text-white mb-2">${passed ? 'Passed!' : 'Try Again'}</h2>
+                        <p class="text-slate-400 mb-8 text-lg">You scored <strong class="text-${passed ? 'green' : 'red'}-400">${percent}%</strong> (${this.score}/${this.activeQuiz.q.length})</p>
+                        <button onclick="exams.quit()" class="bg-slate-700 hover:bg-slate-600 text-white px-8 py-3 rounded-xl font-bold transition shadow-lg w-full md:w-auto">Return to Exams</button>
+                    </div>
+                `;
+                if(passed) document.getElementById('user-lvl').innerText = "Lvl 2";
+            },
+
+            quit: function() {
+                document.getElementById('test-active').classList.add('hidden');
+                document.getElementById('test-home').classList.remove('hidden');
+            }
+        };
+
+        // --- D. EDITOR ENGINE ---
+        const editor = {
+            cm: null,
+            init: function() {
+                this.cm = CodeMirror.fromTextArea(document.getElementById('code-area'), {
+                    mode: 'htmlmixed',
+                    theme: 'dracula',
+                    lineNumbers: true,
+                    autoCloseTags: true,
+                    lineWrapping: true,
+                    tabSize: 2
+                });
+                
+                // Persistence
+                const saved = localStorage.getItem('windon_src_v4');
+                this.cm.setValue(saved || "\n<h1>Hello World</h1>\n<p>Start coding...</p>");
+                
+                this.cm.on('change', () => {
+                    localStorage.setItem('windon_src_v4', this.cm.getValue());
+                    // Auto-run on Desktop only to save battery on mobile
+                    if(window.innerWidth >= 768) this.run();
+                });
+            },
+
+            run: function() {
+                const frame = document.getElementById('preview-frame');
+                const doc = frame.contentDocument || frame.contentWindow.document;
+                doc.open(); doc.write(this.cm.getValue()); doc.close();
+                // Mobile Modal Logic
+                if(window.innerWidth < 768) document.getElementById('preview-modal').classList.add('open');
+            },
+
+            closePreview: function() {
+                document.getElementById('preview-modal').classList.remove('open');
+            },
+
+            reset: function() {
+                if(confirm("Are you sure you want to clear your workspace?")) {
+                    this.cm.setValue("");
+                    this.cm.focus();
+                }
+            },
+
+            // BUG FIX: LOOKUP FUNCTION
+            loadLesson: function(cIdx, lIdx) {
+                const code = DB.courses[cIdx].lessons[lIdx].c;
+                this.inject(code);
+            },
+
+            inject: function(code) {
+                this.cm.setValue(code);
+                nav.to('code');
+            },
+
+            insert: function(key) {
+                const snippet = DB.snippets[key];
+                if(snippet) {
+                    this.cm.replaceSelection(snippet);
+                    this.cm.focus();
+                    if(window.innerWidth >= 768) this.run();
+                }
+            },
+
+            download: function() {
+                const blob = new Blob([this.cm.getValue()], {type: 'text/html'});
+                const link = document.createElement('a');
+                link.href = URL.createObjectURL(blob);
+                link.download = 'windon-project.html';
+                link.click();
+            }
+        };
+
+        // --- E. NAVIGATION CONTROLLER ---
+        const nav = {
+            to: function(id) {
+                // View Transition
+                document.querySelectorAll('.view-layer').forEach(v => v.classList.remove('active'));
+                document.getElementById('view-' + id).classList.add('active');
+                
+                // Button Styling
+                document.querySelectorAll('.nav-btn').forEach(b => { 
+                    b.classList.remove('text-sky-500'); 
+                    b.classList.add('text-slate-500'); 
+                });
+                document.getElementById('btn-' + id).classList.remove('text-slate-500');
+                document.getElementById('btn-' + id).classList.add('text-sky-500');
+                
+                // Refresh Editor if needed
+                if(id === 'code') setTimeout(() => editor.cm.refresh(), 50);
+            }
+        };
+
+        // --- F. BOOTSTRAP ---
+        window.onload = function() { 
+            lms.init(); 
+            exams.init(); 
+            editor.init(); 
+        };
+
+    </script>
+</body>
+</html>
